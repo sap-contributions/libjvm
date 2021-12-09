@@ -209,6 +209,135 @@ func testBuild(t *testing.T, context spec.G, it spec.S) {
 		Expect(result.BOM.Entries[1].Launch).To(BeTrue())
 	})
 
+	context("buildplan version specified", func() {
+		it.Before(func() {
+			ctx.Buildpack.Metadata = map[string]interface{}{
+				"configurations": []map[string]interface{}{
+					{
+						"name":    "BP_JVM_VERSION",
+						"default": "1.1.1",
+					},
+				},
+				"dependencies": []map[string]interface{}{
+					{
+						"id":      "jdk",
+						"version": "1.1.1",
+						"stacks":  []interface{}{"test-stack-id"},
+					},
+					{
+						"id":      "jre",
+						"version": "1.1.1",
+						"stacks":  []interface{}{"test-stack-id"},
+					},
+					{
+						"id":      "jdk",
+						"version": "2.2.2",
+						"stacks":  []interface{}{"test-stack-id"},
+					},
+					{
+						"id":      "jre",
+						"version": "2.2.2",
+						"stacks":  []interface{}{"test-stack-id"},
+					},
+					{
+						"id":      "jdk",
+						"version": "3.3.3",
+						"stacks":  []interface{}{"test-stack-id"},
+					},
+					{
+						"id":      "jre",
+						"version": "3.3.3",
+						"stacks":  []interface{}{"test-stack-id"},
+					},
+					{
+						"id":      "jdk",
+						"version": "4.4.4",
+						"stacks":  []interface{}{"test-stack-id"},
+					},
+					{
+						"id":      "jre",
+						"version": "4.4.4",
+						"stacks":  []interface{}{"test-stack-id"},
+					},
+				},
+			}
+			ctx.StackID = "test-stack-id"
+		})
+		it("contributes the default version", func() {
+			ctx.Plan.Entries = append(ctx.Plan.Entries,
+				libcnb.BuildpackPlanEntry{Name: "jdk"},
+				libcnb.BuildpackPlanEntry{Name: "jre"},
+			)
+
+			result, err := libjvm.Build{}.Build(ctx)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Layers[0].(libjvm.JDK).LayerContributor.Dependency.Version).To(Equal("1.1.1"))
+			Expect(result.Layers[1].(libjvm.JRE).LayerContributor.Dependency.Version).To(Equal("1.1.1"))
+		})
+
+		it("contributes the version required by the jre plan entry", func() {
+			ctx.Plan.Entries = append(ctx.Plan.Entries,
+				libcnb.BuildpackPlanEntry{Name: "jdk"},
+				libcnb.BuildpackPlanEntry{Name: "jre", Metadata: map[string]interface{}{"version": "2.*"}},
+			)
+
+			result, err := libjvm.Build{}.Build(ctx)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Layers[0].(libjvm.JDK).LayerContributor.Dependency.Version).To(Equal("2.2.2"))
+			Expect(result.Layers[1].(libjvm.JRE).LayerContributor.Dependency.Version).To(Equal("2.2.2"))
+		})
+
+		it("contributes the version required by the jdk plan entry", func() {
+			ctx.Plan.Entries = append(ctx.Plan.Entries,
+				libcnb.BuildpackPlanEntry{Name: "jdk", Metadata: map[string]interface{}{"version": "2.*"}},
+				libcnb.BuildpackPlanEntry{Name: "jre"},
+			)
+
+			result, err := libjvm.Build{}.Build(ctx)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Layers[0].(libjvm.JDK).LayerContributor.Dependency.Version).To(Equal("2.2.2"))
+			Expect(result.Layers[1].(libjvm.JRE).LayerContributor.Dependency.Version).To(Equal("2.2.2"))
+		})
+
+		it("contributes the version required by the jdk & jre plan entries", func() {
+			ctx.Plan.Entries = append(ctx.Plan.Entries,
+				libcnb.BuildpackPlanEntry{Name: "jdk", Metadata: map[string]interface{}{"version": "2.*"}},
+				libcnb.BuildpackPlanEntry{Name: "jre", Metadata: map[string]interface{}{"version": "3.*"}},
+			)
+
+			result, err := libjvm.Build{}.Build(ctx)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Layers[0].(libjvm.JDK).LayerContributor.Dependency.Version).To(Equal("2.2.2"))
+			Expect(result.Layers[1].(libjvm.JRE).LayerContributor.Dependency.Version).To(Equal("3.3.3"))
+		})
+
+		it("fails if unresolvable jdk version is requested", func() {
+			ctx.Plan.Entries = append(ctx.Plan.Entries,
+				libcnb.BuildpackPlanEntry{Name: "jdk", Metadata: map[string]interface{}{"version": "5.*"}},
+				libcnb.BuildpackPlanEntry{Name: "jre", Metadata: map[string]interface{}{"version": "2.*"}},
+			)
+
+			_, err := libjvm.Build{}.Build(ctx)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unable to find dependency\nno valid dependencies for jdk, 5.*"))
+		})
+
+		it("fails if unresolvable jre version is requested", func() {
+			ctx.Plan.Entries = append(ctx.Plan.Entries,
+				libcnb.BuildpackPlanEntry{Name: "jdk", Metadata: map[string]interface{}{"version": "2.*"}},
+				libcnb.BuildpackPlanEntry{Name: "jre", Metadata: map[string]interface{}{"version": "5.*"}},
+			)
+
+			_, err := libjvm.Build{}.Build(ctx)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unable to find dependency\nno valid dependencies for jdk, 5.*"))
+		})
+	})
+
 	context("$BP_JVM_VERSION", func() {
 		it.Before(func() {
 			Expect(os.Setenv("BP_JVM_VERSION", "1.1.1")).To(Succeed())
@@ -222,6 +351,44 @@ func testBuild(t *testing.T, context spec.G, it spec.S) {
 			ctx.Plan.Entries = append(ctx.Plan.Entries,
 				libcnb.BuildpackPlanEntry{Name: "jdk"},
 				libcnb.BuildpackPlanEntry{Name: "jre"},
+			)
+			ctx.Buildpack.Metadata = map[string]interface{}{
+				"dependencies": []map[string]interface{}{
+					{
+						"id":      "jdk",
+						"version": "1.1.1",
+						"stacks":  []interface{}{"test-stack-id"},
+					},
+					{
+						"id":      "jdk",
+						"version": "2.2.2",
+						"stacks":  []interface{}{"test-stack-id"},
+					},
+					{
+						"id":      "jre",
+						"version": "1.1.1",
+						"stacks":  []interface{}{"test-stack-id"},
+					},
+					{
+						"id":      "jre",
+						"version": "2.2.2",
+						"stacks":  []interface{}{"test-stack-id"},
+					},
+				},
+			}
+			ctx.StackID = "test-stack-id"
+
+			result, err := libjvm.Build{}.Build(ctx)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.Layers[0].(libjvm.JDK).LayerContributor.Dependency.Version).To(Equal("1.1.1"))
+			Expect(result.Layers[1].(libjvm.JRE).LayerContributor.Dependency.Version).To(Equal("1.1.1"))
+		})
+
+		it("contributes the explicitly required JVM version", func() {
+			ctx.Plan.Entries = append(ctx.Plan.Entries,
+				libcnb.BuildpackPlanEntry{Name: "jdk", Metadata: map[string]interface{}{"version": "2.2.2"}},
+				libcnb.BuildpackPlanEntry{Name: "jre", Metadata: map[string]interface{}{"version": "3.3.3"}},
 			)
 			ctx.Buildpack.Metadata = map[string]interface{}{
 				"dependencies": []map[string]interface{}{
