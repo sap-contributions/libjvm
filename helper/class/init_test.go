@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package helper_test
+package class_test
 
 import (
 	"testing"
@@ -24,20 +24,7 @@ import (
 )
 
 func TestUnit(t *testing.T) {
-	suite := spec.New("libjvm/helper", spec.Report(report.Terminal{}))
-	suite("ActiveProcessorCount", testActiveProcessorCount)
-	suite("JavaOpts", testJavaOpts)
-	suite("JVMHeapDump", testJVMHeapDump)
-	suite("LinkLocalDNS", testLinkLocalDNS)
-	suite("MemoryCalculator", testMemoryCalculator)
-	suite("OpenSSLCertificateLoader", testOpenSSLCertificateLoader)
-	suite("SecurityProvidersClasspath8", testSecurityProvidersClasspath8)
-	suite("SecurityProvidersClasspath9", testSecurityProvidersClasspath9)
-	suite("SecurityProvidersConfigurer", testSecurityProvidersConfigurer)
-	suite("Debug8", testDebug8)
-	suite("Debug9", testDebug9)
-	suite("JMX", testJMX)
-	suite("NMT", testNMT)
-	suite("JFR", testJFR)
+	suite := spec.New("libjvm/helper/class", spec.Report(report.Terminal{}))
+	suite("ClassFile", testClassFile)
 	suite.Run(t)
 }

@@ -1,4 +1,4 @@
-package helper_test
+package class_test
 
 import (
 	"bytes"
@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	"github.com/paketo-buildpacks/libjvm/helper"
+	"github.com/paketo-buildpacks/libjvm/helper/class"
 	"github.com/sclevine/spec"
 )
 
@@ -25,7 +25,7 @@ func testClassFile(t *testing.T, context spec.G, it spec.S) {
 		binary.Write(m, binary.BigEndian, uint16(55))
 
 		it("returns correct Java version", func() {
-			v, err := helper.JVMVersionFromClassFile(m)
+			v, err := class.JVMVersionFromClassFile(m)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(v).To(Equal("11"))
 		})
@@ -43,14 +43,14 @@ func testClassFile(t *testing.T, context spec.G, it spec.S) {
 		})
 
 		it("fails to read major version", func() {
-			v, err := helper.JVMVersionFromClassFile(m)
+			v, err := class.JVMVersionFromClassFile(m)
 			Expect(v).To(BeEmpty())
 			Expect(err).To(MatchError("failed to read major version from Java Class file, error: EOF"))
 		})
 
 		it("fails with the version unknown", func() {
 			binary.Write(m, binary.BigEndian, uint16(100))
-			v, err := helper.JVMVersionFromClassFile(m)
+			v, err := class.JVMVersionFromClassFile(m)
 			Expect(v).To(BeEmpty())
 			Expect(err).To(MatchError("unknown Java version (hex): 0x64"))
 		})

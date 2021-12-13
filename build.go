@@ -18,10 +18,13 @@ package libjvm
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/buildpacks/libcnb"
 	"github.com/heroku/color"
+	"github.com/paketo-buildpacks/libjvm/helper/class"
 	"github.com/paketo-buildpacks/libpak"
 	"github.com/paketo-buildpacks/libpak/bard"
 )
@@ -55,12 +58,17 @@ func (b Build) Build(context libcnb.BuildContext) (libcnb.BuildResult, error) {
 	cl := NewCertificateLoader()
 	cl.Logger = b.Logger.BodyWriter()
 
+	v, err := b.getJVMVersion(context.Application.Path, cr)
+	if err != nil {
+		return libcnb.BuildResult{}, fmt.Errorf("unable to determine jvm version\n%w", err)
+	}
+
 	jreSkipped := false
 	if t, _ := cr.Resolve("BP_JVM_TYPE"); strings.ToLower(t) == "jdk" {
 		jreSkipped = true
 	}
 
-	jdkPlanEntry, jdkRequired, err := pr.Resolve("jdk")
+	_, jdkRequired, err := pr.Resolve("jdk")
 	if err != nil {
 		return libcnb.BuildResult{}, fmt.Errorf("unable to resolve jdk plan entry\n%w", err)
 	}
@@ -70,11 +78,9 @@ func (b Build) Build(context libcnb.BuildContext) (libcnb.BuildResult, error) {
 		return libcnb.BuildResult{}, fmt.Errorf("unable to resolve jre plan entry\n%w", err)
 	}
 
-	jdkVersion, jreVersion := calculateVersions(jdkPlanEntry, jrePlanEntry, cr)
-
 	jreAvailable := jreRequired
 	if jreRequired {
-		_, err := dr.Resolve("jre", jreVersion)
+		_, err := dr.Resolve("jre", v)
 		if libpak.IsNoValidDependencies(err) {
 			jreAvailable = false
 		}
@@ -82,7 +88,7 @@ func (b Build) Build(context libcnb.BuildContext) (libcnb.BuildResult, error) {
 
 	// we need a JDK, we're not using the JDK as a JRE and the JRE has not been skipped
 	if jdkRequired && !(jreRequired && !jreAvailable) && !jreSkipped {
-		dep, err := dr.Resolve("jdk", jdkVersion)
+		dep, err := dr.Resolve("jdk", v)
 		if err != nil {
 			return libcnb.BuildResult{}, fmt.Errorf("unable to find dependency\n%w", err)
 		}
@@ -99,7 +105,7 @@ func (b Build) Build(context libcnb.BuildContext) (libcnb.BuildResult, error) {
 
 	if jreRequired {
 		dt := JREType
-		depJRE, err := dr.Resolve("jre", jreVersion)
+		depJRE, err := dr.Resolve("jre", v)
 
 		if !jreAvailable || jreSkipped {
 			b.warnIfJreNotUsed(jreAvailable, jreSkipped)
@@ -109,7 +115,7 @@ func (b Build) Build(context libcnb.BuildContext) (libcnb.BuildResult, error) {
 			jrePlanEntry.Metadata["cache"] = true
 
 			dt = JDKType
-			depJRE, err = dr.Resolve("jdk", jreVersion)
+			depJRE, err = dr.Resolve("jdk", v)
 		}
 
 		if err != nil {
@@ -172,27 +178,37 @@ func (b Build) warnIfJreNotUsed(jreAvailable, jreSkipped bool) {
 	b.Logger.Header(color.New(color.FgYellow, color.Bold).Sprint(msg))
 }
 
-func calculateVersions(jdkEntry, jreEntry libcnb.BuildpackPlanEntry, cr libpak.ConfigurationResolver) (string, string) {
-	v, explicit := cr.Resolve("BP_JVM_VERSION")
+func (b Build) getJVMVersion(appPath string, cr libpak.ConfigurationResolver) (string, error) {
+	version, explicit := cr.Resolve("BP_JVM_VERSION")
+	if !explicit {
+		manifest, err := NewManifest(appPath)
+		if err != nil {
+			return "", err
+		}
+		mainClass, ok := manifest.Get("Main-Class")
 
-	if explicit {
-		return v, v
+		if ok {
+			mainClassPath := fmt.Sprintf("%s.class", strings.ReplaceAll(mainClass, ".", "/"))
+			file := filepath.Join(appPath, mainClassPath)
+
+			mainFile, err := os.Open(file)
+			if err != nil {
+				return "", err
+			}
+			defer mainFile.Close()
+
+			versionFromClass, err := class.JVMVersionFromClassFile(mainFile)
+			if err != nil {
+				return "", err
+			}
+			if version != versionFromClass {
+				f := color.New(color.Faint)
+				b.Logger.Header(f.Sprint("Context specific overrides:"))
+				b.Logger.Body(f.Sprintf("$BP_JVM_VERSION\t\t%s\t\tthe Java version, extracted from main class", versionFromClass))
+				return versionFromClass, nil
+			}
+		}
 	}
 
-	jdkVersion, jdkVersionRequired := jdkEntry.Metadata["version"]
-	jreVersion, jreVersionRequired := jreEntry.Metadata["version"]
-
-	if jdkVersionRequired && !jreVersionRequired {
-		return fmt.Sprintf("%v", jdkVersion), fmt.Sprintf("%v", jdkVersion)
-	}
-
-	if !jdkVersionRequired && jreVersionRequired {
-		return fmt.Sprintf("%v", jreVersion), fmt.Sprintf("%v", jreVersion)
-	}
-
-	if jdkVersionRequired && jreVersionRequired {
-		return fmt.Sprintf("%v", jdkVersion), fmt.Sprintf("%v", jreVersion)
-	}
-
-	return v, v
+	return version, nil
 }
