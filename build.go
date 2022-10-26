@@ -18,9 +18,10 @@ package libjvm
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/mattn/go-shellwords"
 	"github.com/paketo-buildpacks/libpak/effect"
-	"strings"
 
 	"github.com/buildpacks/libcnb"
 	"github.com/heroku/color"
@@ -29,12 +30,13 @@ import (
 )
 
 type Build struct {
-	Logger          bard.Logger
-	Result          libcnb.BuildResult
-	CertLoader      CertificateLoader
-	DependencyCache libpak.DependencyCache
-	Native          NativeImage
-	CustomHelpers   []string
+	Logger           bard.Logger
+	Result           libcnb.BuildResult
+	CertLoader       CertificateLoader
+	DependencyCache  libpak.DependencyCache
+	Native           NativeImage
+	RequestModifiers []libpak.RequestModifierFunc
+	CustomHelpers    []string
 }
 
 type BuildOption func(build Build) Build
@@ -49,6 +51,13 @@ func WithNativeImage(nativeImage NativeImage) BuildOption {
 func WithCustomHelpers(customHelpers []string) BuildOption {
 	return func(build Build) Build {
 		build.CustomHelpers = customHelpers
+		return build
+	}
+}
+
+func WithRequestModifier(modifier libpak.RequestModifierFunc) BuildOption {
+	return func(build Build) Build {
+		build.RequestModifiers = append(build.RequestModifiers, modifier)
 		return build
 	}
 }
@@ -209,6 +218,8 @@ func (b *Build) contributeJDK(jdkDep libpak.BuildpackDependency) error {
 	if err != nil {
 		return fmt.Errorf("unable to create jdk\n%w", err)
 	}
+	jdk.LayerContributor.RequestModifierFuncs = b.RequestModifiers
+
 	jdk.Logger = b.Logger
 	b.Result.Layers = append(b.Result.Layers, jdk)
 	b.Result.BOM.Entries = append(b.Result.BOM.Entries, be)
@@ -232,6 +243,7 @@ func (b *Build) contributeJRE(jreDep libpak.BuildpackDependency, appPath string,
 	if err != nil {
 		return fmt.Errorf("unable to create jdk\n%w", err)
 	}
+	jre.LayerContributor.RequestModifierFuncs = b.RequestModifiers
 
 	jre.Logger = b.Logger
 	b.Result.Layers = append(b.Result.Layers, jre)
